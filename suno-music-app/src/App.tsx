@@ -4,8 +4,12 @@ import { AccessGate } from './components/AccessGate.tsx';
 import { Composer } from './components/Composer.tsx';
 import { Library } from './components/Library.tsx';
 import { PlayerBar } from './components/PlayerBar.tsx';
+import { ThemeSwitch } from './components/ThemeSwitch.tsx';
 import { useLibrary } from './hooks/useLibrary.ts';
 import { usePlayer, type QueueEntry } from './hooks/usePlayer.ts';
+import { useTheme } from './hooks/useTheme.ts';
+import { loadFavorites, saveFavorites } from './lib/favorites.ts';
+import { selectLibrary, type LibraryView } from './lib/library.ts';
 import { ApiError, api, getAccessCode, setAccessCode } from './lib/api.ts';
 
 interface Toast {
@@ -25,9 +29,24 @@ export default function App() {
   const ready = Boolean(config) && !locked;
   const library = useLibrary(ready);
 
+  const theme = useTheme();
+  const [favorites, setFavorites] = useState<Set<string>>(loadFavorites);
+  const toggleFavorite = useCallback((trackId: string) => {
+    setFavorites((prev) => {
+      const next = new Set(prev);
+      if (next.has(trackId)) next.delete(trackId);
+      else next.add(trackId);
+      saveFavorites(next);
+      return next;
+    });
+  }, []);
+  const [view, setView] = useState<LibraryView>({ query: '', sort: 'newest', favoritesOnly: false });
+  const visible = useMemo(() => selectLibrary(library.items, view, favorites), [library.items, view, favorites]);
+
+  // The play queue follows what the Library currently shows (search, sort, favorites).
   const queue = useMemo<QueueEntry[]>(
-    () => library.items.flatMap((i) => i.tracks.map((track) => ({ taskId: i.taskId, track }))),
-    [library.items],
+    () => visible.flatMap((v) => v.tracks.map((track) => ({ taskId: v.item.taskId, track }))),
+    [visible],
   );
   const player = usePlayer(queue);
 
@@ -120,6 +139,7 @@ export default function App() {
           </div>
         </div>
         <div className="top-right">
+          <ThemeSwitch value={theme.pref} onChange={theme.setPref} />
           {config?.mock && <span className="badge mock" title="SUNO_MOCK=true — no real generation">Demo mode</span>}
           {credits !== null && (
             <span className="credits" title="Remaining SunoAPI credits" data-testid="credits">
@@ -135,6 +155,11 @@ export default function App() {
         <Composer onCreated={onCreated} disabled={!ready} />
         <Library
           items={library.items}
+          visible={visible}
+          view={view}
+          onViewChange={setView}
+          favorites={favorites}
+          onToggleFavorite={toggleFavorite}
           player={player}
           onRemove={library.remove}
           onClear={library.clear}

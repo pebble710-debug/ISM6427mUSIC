@@ -45,3 +45,24 @@ export const LyricsIcon = (p: P) => (
 export const LockIcon = (p: P) => (
   <svg {...base(p)}><rect x="5" y="10.5" width="14" height="9.5" rx="2.5" stroke="currentColor" strokeWidth="1.8" /><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" stroke="currentColor" strokeWidth="1.8" /></svg>
 );
+export const SunIcon = (p: P) => (
+  <svg {...base(p)}><circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.9" /><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" /></svg>
+);
+export const MoonIcon = (p: P) => (
+  <svg {...base(p)}><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" stroke="currentColor" strokeWidth="1.9" strokeLinejoin="round" /></svg>
+);
+export const AutoIcon = (p: P) => (
+  <svg {...base(p)}><circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.9" /><path d="M12 3.5a8.5 8.5 0 0 1 0 17Z" fill="currentColor" /></svg>
+);
+export const HeartIcon = ({ filled, ...p }: P & { filled?: boolean }) => (
+  <svg {...base(p)}><path d="M12 20.3s-7.5-4.5-7.5-10.3A4.2 4.2 0 0 1 12 7.4 4.2 4.2 0 0 1 19.5 10c0 5.8-7.5 10.3-7.5 10.3Z" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.9" strokeLinejoin="round" /></svg>
+);
+export const ShuffleIcon = (p: P) => (
+  <svg {...base(p)}><path d="M3 7h3.5c2.2 0 3.4 1.2 4.5 3l2 3.5c1 1.8 2.3 3.5 4.5 3.5H21M3 17h3.5c1.4 0 2.4-.5 3.2-1.4M14 8.4c.8-.9 1.8-1.4 3.2-1.4H21M18 4l3 3-3 3M18 14l3 3-3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+);
+export const RepeatIcon = (p: P) => (
+  <svg {...base(p)}><path d="M4 11V9.5A3.5 3.5 0 0 1 7.5 6H19m0 0-3-3m3 3-3 3M20 13v1.5a3.5 3.5 0 0 1-3.5 3.5H5m0 0 3 3m-3-3 3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+);
+export const DiceIcon = (p: P) => (
+  <svg {...base(p)}><rect x="4" y="4" width="16" height="16" rx="4" stroke="currentColor" strokeWidth="1.8" /><circle cx="9" cy="9" r="1.4" fill="currentColor" /><circle cx="15" cy="15" r="1.4" fill="currentColor" /><circle cx="15" cy="9" r="1.4" fill="currentColor" /><circle cx="9" cy="15" r="1.4" fill="currentColor" /></svg>
+);

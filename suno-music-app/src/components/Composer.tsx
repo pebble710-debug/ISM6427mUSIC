@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { LIMITS, type GenerateRequest, type GenerationMode, type SunoModel } from '../../shared/types.ts';
 import { ApiError, api } from '../lib/api.ts';
-import { LyricsIcon, MicIcon, SparkleIcon, WaveIcon } from './Icons.tsx';
+import { hasPref, loadPrefs, savePrefs } from '../lib/prefs.ts';
+import { surpriseIdea } from '../lib/surprise.ts';
+import { DiceIcon, LyricsIcon, MicIcon, SparkleIcon, WaveIcon } from './Icons.tsx';
 import { Segmented } from './Segmented.tsx';
 
 export const GENRES = [
@@ -37,12 +39,18 @@ const EMPTY: Draft = {
 };
 
 function loadDraft(): Draft {
+  let draft = EMPTY;
   try {
     const raw = localStorage.getItem(DRAFT_KEY);
-    return raw ? { ...EMPTY, ...JSON.parse(raw) } : EMPTY;
+    if (raw) draft = { ...EMPTY, ...JSON.parse(raw) };
   } catch {
-    return EMPTY;
+    /* ignore */
   }
+  // Saved preferences (genre, vocal/instrumental) take priority over the last draft.
+  const prefs = loadPrefs();
+  if (hasPref('genres')) draft = { ...draft, genres: prefs.genres.filter((g) => GENRES.includes(g)) };
+  if (hasPref('instrumental')) draft = { ...draft, instrumental: prefs.instrumental };
+  return draft;
 }
 
 /** Builds the request for our /api/generate endpoint (the server re-validates everything). */
@@ -90,7 +98,11 @@ export function Composer({ onCreated, disabled }: { onCreated: (taskId: string, 
   const [showAdvanced, setShowAdvanced] = useState(false);
   const lyricsRef = useRef<HTMLTextAreaElement>(null);
 
+  const [spin, setSpin] = useState(false);
+
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => {
+    if (k === 'genres') savePrefs({ genres: v as string[] });
+    if (k === 'instrumental') savePrefs({ instrumental: v as boolean });
     setD((prev) => ({ ...prev, [k]: v }));
     setErrors((prev) => {
       const { [k as string]: _omit, ...rest } = prev;
@@ -124,6 +136,26 @@ export function Composer({ onCreated, disabled }: { onCreated: (taskId: string, 
       el?.setSelectionRange(p, p);
     });
   };
+
+  /** Local only — fills in a random idea. Never calls the API. */
+  const surprise = () => {
+    const idea = surpriseIdea(Math.random, d.mode === 'simple' ? d.prompt : d.styleExtra);
+    setD((prev) => ({
+      ...prev,
+      ...(prev.mode === 'simple' ? { prompt: idea.prompt } : { styleExtra: idea.sound }),
+      // Respect the user's chosen genres; suggest one only if none is selected.
+      genres: prev.genres.length ? prev.genres : [idea.genre],
+    }));
+    setErrors({});
+    setSpin(true);
+    setTimeout(() => setSpin(false), 500);
+  };
+
+  const surpriseButton = (
+    <button type="button" className={`surprise ${spin ? 'spin' : ''}`} onClick={surprise} title="Fill in a random song idea (free — no credits used)">
+      <DiceIcon width={15} height={15} /> Surprise Me
+    </button>
+  );
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -170,7 +202,10 @@ export function Composer({ onCreated, disabled }: { onCreated: (taskId: string, 
 
       {!custom && (
         <div className="field">
-          <label htmlFor="prompt">Describe your song</label>
+          <div className="label-row">
+            <label htmlFor="prompt">Describe your song</label>
+            {surpriseButton}
+          </div>
           <textarea
             id="prompt"
             rows={4}
@@ -199,7 +234,10 @@ export function Composer({ onCreated, disabled }: { onCreated: (taskId: string, 
       )}
 
       <div className="field">
-        <span className="label" id="genre-label">Genre &amp; style</span>
+        <div className="label-row">
+          <span className="label" id="genre-label">Genre &amp; style</span>
+          {custom && surpriseButton}
+        </div>
         <div className="chips" role="group" aria-labelledby="genre-label">
           {GENRES.map((g) => (
             <button type="button" key={g} className={`chip ${d.genres.includes(g) ? 'on' : ''}`} aria-pressed={d.genres.includes(g)} onClick={() => toggleGenre(g)}>

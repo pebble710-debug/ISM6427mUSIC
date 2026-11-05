@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Track } from '../../shared/types.ts';
+import { loadPrefs, savePrefs, type RepeatMode } from '../lib/prefs.ts';
 
 export interface QueueEntry {
   taskId: string;
@@ -8,6 +9,26 @@ export interface QueueEntry {
 
 export function playableUrl(t: Track): string {
   return t.audioUrl || t.streamUrl;
+}
+
+/**
+ * Picks the next queue entry.
+ * - repeat 'one' + track ended → same track
+ * - shuffle → random other track
+ * - otherwise the following track; at the end of the queue it wraps when the user pressed
+ *   Next or repeat is 'all', and stops (null) when playback simply ran out with repeat 'off'.
+ */
+export function nextEntry(q: QueueEntry[], currentId: string | undefined, opts: { shuffle: boolean; repeat: RepeatMode; ended: boolean; rand?: () => number }): QueueEntry | null {
+  if (!q.length) return null;
+  const idx = q.findIndex((e) => e.track.id === currentId);
+  if (opts.ended && opts.repeat === 'one' && idx >= 0) return q[idx];
+  if (opts.shuffle && q.length > 1) {
+    const others = q.filter((_, i) => i !== idx);
+    return others[Math.floor((opts.rand ?? Math.random)() * others.length) % others.length];
+  }
+  if (idx + 1 < q.length) return q[idx + 1];
+  if (!opts.ended || opts.repeat === 'all') return q[0];
+  return null;
 }
 
 export function usePlayer(queue: QueueEntry[]) {
@@ -23,12 +44,19 @@ export function usePlayer(queue: QueueEntry[]) {
   const [duration, setDuration] = useState(0);
   const [volume, setVolumeState] = useState(0.9);
   const [error, setError] = useState<string | null>(null);
+  const [buffered, setBuffered] = useState(0);
+  const [shuffle, setShuffleState] = useState(() => loadPrefs().shuffle);
+  const [repeat, setRepeatState] = useState<RepeatMode>(() => loadPrefs().repeat);
+  const modesRef = useRef({ shuffle, repeat });
+  modesRef.current = { shuffle, repeat };
+  /** Tracks played in this session, so Previous works sensibly in shuffle mode. */
+  const historyRef = useRef<string[]>([]);
   const queueRef = useRef(queue);
   queueRef.current = queue;
   const currentRef = useRef(current);
   currentRef.current = current;
 
-  const play = useCallback(async (entry: QueueEntry) => {
+  const play = useCallback(async (entry: QueueEntry, opts: { record?: boolean } = {}) => {
     const audio = audioRef.current;
     if (!audio) return;
     const url = playableUrl(entry.track);
@@ -39,6 +67,8 @@ export function usePlayer(queue: QueueEntry[]) {
     setError(null);
     const same = currentRef.current?.track.id === entry.track.id && audio.src;
     if (!same) {
+      if (currentRef.current && opts.record !== false) historyRef.current = [...historyRef.current, currentRef.current.track.id].slice(-50);
+      setBuffered(0);
       audio.src = url;
       setTime(0);
       setDuration(entry.track.duration || 0);
@@ -65,18 +95,60 @@ export function usePlayer(queue: QueueEntry[]) {
     else audio.pause();
   }, [play]);
 
-  const step = useCallback((dir: 1 | -1) => {
+  const step = useCallback((dir: 1 | -1, ended = false) => {
     const q = queueRef.current.filter((e) => playableUrl(e.track));
     if (!q.length) return;
-    const idx = q.findIndex((e) => e.track.id === currentRef.current?.track.id);
     const audio = audioRef.current;
-    if (dir === -1 && audio && audio.currentTime > 3) {
+    const currentId = currentRef.current?.track.id;
+    if (dir === 1) {
+      const next = nextEntry(q, currentId, { ...modesRef.current, ended });
+      if (!next) {
+        // End of queue with repeat off: stop and rewind.
+        if (audio) audio.currentTime = 0;
+        setTime(0);
+        return;
+      }
+      if (next.track.id === currentId && audio) {
+        audio.currentTime = 0;
+        void audio.play().catch(() => undefined);
+        return;
+      }
+      void play(next);
+      return;
+    }
+    if (audio && audio.currentTime > 3) {
       audio.currentTime = 0;
       return;
     }
-    const next = q[(idx + dir + q.length) % q.length];
-    if (next) void play(next);
+    if (modesRef.current.shuffle) {
+      const hist = historyRef.current;
+      const prevId = hist[hist.length - 1];
+      const prev = q.find((e) => e.track.id === prevId);
+      if (prev) {
+        historyRef.current = hist.slice(0, -1);
+        void play(prev, { record: false });
+        return;
+      }
+    }
+    const idx = q.findIndex((e) => e.track.id === currentId);
+    const prev = q[(idx - 1 + q.length) % q.length];
+    if (prev) void play(prev);
   }, [play]);
+
+  const toggleShuffle = useCallback(() => {
+    setShuffleState((v) => {
+      savePrefs({ shuffle: !v });
+      return !v;
+    });
+  }, []);
+
+  const cycleRepeat = useCallback(() => {
+    setRepeatState((r) => {
+      const next: RepeatMode = r === 'off' ? 'all' : r === 'all' ? 'one' : 'off';
+      savePrefs({ repeat: next });
+      return next;
+    });
+  }, []);
 
   const seek = useCallback((t: number) => {
     const audio = audioRef.current;
@@ -98,7 +170,14 @@ export function usePlayer(queue: QueueEntry[]) {
     const onMeta = () => Number.isFinite(audio.duration) && setDuration(audio.duration);
     const onWaiting = () => setLoading(true);
     const onCanPlay = () => setLoading(false);
-    const onEnded = () => step(1);
+    const onEnded = () => step(1, true);
+    const onProgress = () => {
+      try {
+        if (audio.buffered.length) setBuffered(audio.buffered.end(audio.buffered.length - 1));
+      } catch {
+        /* ignore */
+      }
+    };
     const onError = () => {
       setPlaying(false);
       setLoading(false);
@@ -113,7 +192,9 @@ export function usePlayer(queue: QueueEntry[]) {
     audio.addEventListener('canplay', onCanPlay);
     audio.addEventListener('ended', onEnded);
     audio.addEventListener('error', onError);
+    audio.addEventListener('progress', onProgress);
     return () => {
+      audio.removeEventListener('progress', onProgress);
       audio.removeEventListener('play', onPlay);
       audio.removeEventListener('pause', onPause);
       audio.removeEventListener('timeupdate', onTime);
@@ -144,7 +225,11 @@ export function usePlayer(queue: QueueEntry[]) {
 
   useEffect(() => () => audioRef.current?.pause(), []);
 
-  return { current, playing, loading, time, duration, volume, error, play, pause, toggle, next: () => step(1), prev: () => step(-1), seek, setVolume, clearError: () => setError(null) };
+  return {
+    current, playing, loading, time, duration, buffered, volume, error, shuffle, repeat,
+    play, pause, toggle, next: () => step(1), prev: () => step(-1), seek, setVolume, toggleShuffle, cycleRepeat,
+    clearError: () => setError(null),
+  };
 }
 
 export type Player = ReturnType<typeof usePlayer>;

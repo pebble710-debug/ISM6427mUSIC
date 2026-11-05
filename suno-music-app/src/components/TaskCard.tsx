@@ -4,7 +4,7 @@ import { formatTime, relativeTime } from '../lib/format.ts';
 import { isExpired, type HistoryItem } from '../lib/history.ts';
 import { playableUrl, type Player } from '../hooks/usePlayer.ts';
 import { Artwork } from './Artwork.tsx';
-import { DownloadIcon, LyricsIcon, PauseIcon, PlayIcon, RefreshIcon, TrashIcon } from './Icons.tsx';
+import { DownloadIcon, HeartIcon, LyricsIcon, PauseIcon, PlayIcon, RefreshIcon, TrashIcon } from './Icons.tsx';
 
 const STEPS = [
   { phase: 'pending', label: 'Queued' },
@@ -34,7 +34,7 @@ function Progress({ item }: { item: HistoryItem }) {
   );
 }
 
-function TrackRow({ item, track, player, onDownload, downloading }: { item: HistoryItem; track: Track; player: Player; onDownload: (t: Track) => void; downloading: boolean }) {
+function TrackRow({ item, track, player, onDownload, downloading, favorite, onToggleFavorite }: { item: HistoryItem; track: Track; player: Player; onDownload: (t: Track) => void; downloading: boolean; favorite: boolean; onToggleFavorite: () => void }) {
   const [showLyrics, setShowLyrics] = useState(false);
   const isCurrent = player.current?.track.id === track.id;
   const isPlaying = isCurrent && player.playing;
@@ -64,6 +64,19 @@ function TrackRow({ item, track, player, onDownload, downloading }: { item: Hist
         {showLyrics && track.lyrics && <pre className="lyrics">{track.lyrics}</pre>}
       </div>
       <div className="track-actions">
+        {track.audioUrl && (
+          <button
+            type="button"
+            className={`icon-btn heart ${favorite ? 'on' : ''}`}
+            aria-pressed={favorite}
+            onClick={onToggleFavorite}
+            aria-label={favorite ? `Remove ${track.title} from favorites` : `Add ${track.title} to favorites`}
+            title={favorite ? 'Remove from favorites' : 'Add to favorites'}
+            data-testid="favorite"
+          >
+            <HeartIcon filled={favorite} />
+          </button>
+        )}
         {track.lyrics && (
           <button type="button" className="icon-btn" aria-pressed={showLyrics} onClick={() => setShowLyrics((s) => !s)} aria-label="Show lyrics" title="Lyrics">
             <LyricsIcon />
@@ -84,8 +97,11 @@ function TrackRow({ item, track, player, onDownload, downloading }: { item: Hist
   );
 }
 
-export function TaskCard({ item, player, onRemove, onResume, onDownload, downloadingId }: {
+export function TaskCard({ item, tracks = item.tracks, favorites, onToggleFavorite, player, onRemove, onResume, onDownload, downloadingId }: {
   item: HistoryItem;
+  tracks?: Track[];
+  favorites: Set<string>;
+  onToggleFavorite: (trackId: string) => void;
   player: Player;
   onRemove: () => void;
   onResume: () => void;
@@ -130,10 +146,10 @@ export function TaskCard({ item, player, onRemove, onResume, onDownload, downloa
         <div className="note">Generated files are kept for 14 days — these links may have expired.</div>
       )}
 
-      {item.tracks.length > 0 && (
+      {tracks.length > 0 && (
         <ul className="tracks">
-          {item.tracks.map((t) => (
-            <TrackRow key={t.id} item={item} track={t} player={player} onDownload={onDownload} downloading={downloadingId === t.id} />
+          {tracks.map((t) => (
+            <TrackRow key={t.id} item={item} track={t} player={player} onDownload={onDownload} downloading={downloadingId === t.id} favorite={favorites.has(t.id)} onToggleFavorite={() => onToggleFavorite(t.id)} />
           ))}
         </ul>
       )}

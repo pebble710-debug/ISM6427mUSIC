@@ -224,6 +224,12 @@ describe('other endpoints', () => {
     const res = await mockMedia(get('/api/mock-media?type=audio&seed=a'));
     expect(res.headers.get('content-type')).toBe('audio/wav');
     expect((await res.arrayBuffer()).byteLength).toBeGreaterThan(1000);
+    // Byte ranges (needed for seeking in demo mode).
+    const part = await mockMedia(get('/api/mock-media?type=audio&seed=a', { range: 'bytes=0-99' }));
+    expect(part.status).toBe(206);
+    expect(part.headers.get('content-range')).toMatch(/^bytes 0-99\/\d+$/);
+    expect((await part.arrayBuffer()).byteLength).toBe(100);
+    expect((await mockMedia(get('/api/mock-media?type=audio&seed=a', { range: 'bytes=99999999-' }))).status).toBe(416);
   });
 });
 

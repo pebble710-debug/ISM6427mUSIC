@@ -14,9 +14,25 @@ export default async (req: Request): Promise<Response> => {
     });
   }
   const wav = mockWav(seed);
-  return new Response(wav, {
-    headers: { 'Content-Type': 'audio/wav', 'Content-Length': String(wav.byteLength), 'Accept-Ranges': 'none', 'Cache-Control': 'public, max-age=3600' },
-  });
+  const base = { 'Content-Type': 'audio/wav', 'Accept-Ranges': 'bytes', 'Cache-Control': 'public, max-age=3600' };
+  // Support byte ranges so the browser can seek inside mock audio (like a real CDN).
+  const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.get('range') || '');
+  if (range && (range[1] || range[2])) {
+    const size = wav.byteLength;
+    let start = range[1] ? Number(range[1]) : size - Number(range[2]);
+    let end = range[1] && range[2] ? Number(range[2]) : size - 1;
+    start = Math.max(0, start);
+    end = Math.min(end, size - 1);
+    if (start > end || start >= size) {
+      return new Response(null, { status: 416, headers: { ...base, 'Content-Range': `bytes */${size}` } });
+    }
+    const chunk = wav.slice(start, end + 1);
+    return new Response(chunk, {
+      status: 206,
+      headers: { ...base, 'Content-Length': String(chunk.byteLength), 'Content-Range': `bytes ${start}-${end}/${size}` },
+    });
+  }
+  return new Response(wav, { headers: { ...base, 'Content-Length': String(wav.byteLength) } });
 };
 
 export const config: Config = { path: '/api/mock-media', method: 'GET' };
